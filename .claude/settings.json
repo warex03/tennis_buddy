@@ -1,0 +1,15 @@
+{
+    "hooks": {
+      "PostToolUse": [
+        {
+          "matcher": "Write|Edit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "f=$(jq -r \".tool_input.file_path // empty\"); case \"$f\" in */TASK_LOG/*) exit 0 ;; esac; jq -n \"{hookSpecificOutput:{hookEventName:\\\"PostToolUse\\\", additionalContext:\\\"A file was changed this turn. When the task is complete, use the task-logging skill (confirm with the user first, skip if declined), then refresh TASK_LOG/SUMMARY.md with task-summary.\\\"}}\""
+            }
+          ]
+        }
+      ]
+    }
+  }
