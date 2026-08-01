@@ -3,5 +3,13 @@ services:
     build: .
     image: tennis-reels
     volumes:
-      - ./inputs:/work/inputs
-      - ./reels:/work/reels
+      - type: bind
+        source: ./inputs
+        target: /work/inputs
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ./reels
+        target: /work/reels
+        bind:
+          create_host_path: true

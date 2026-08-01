@@ -34,7 +34,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import wave
 
 import numpy as np
@@ -402,39 +401,38 @@ def ffmpeg_knows_encoder(name):
     return "Unknown encoder" not in blob and f"Encoder {name}" in blob
 
 
-def encoder_works(name):
+def encoder_works(name, probe_path):
     """Tiny 1-frame encode: catches 'compiled in' but no GPU / driver cases."""
     if name == "libx264":
         return ffmpeg_knows_encoder(name)
     if not ffmpeg_knows_encoder(name):
         return False
-    fd, path = tempfile.mkstemp(suffix=".mp4")
-    os.close(fd)
     try:
         r = subprocess.run(
             ["ffmpeg", "-nostdin", "-v", "error",
              "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.1",
              "-frames:v", "1", "-c:v", name, "-pix_fmt", "yuv420p",
-             path, "-y"],
+             probe_path, "-y"],
             capture_output=True, stdin=subprocess.DEVNULL)
         return r.returncode == 0
     finally:
         try:
-            os.unlink(path)
+            os.unlink(probe_path)
         except OSError:
             pass
 
 
-def resolve_encoder(choice):
+def resolve_encoder(choice, probe_dir):
     """Pick a concrete encoder name. auto tries HW then libx264."""
+    probe_path = os.path.join(probe_dir, "_encoder_probe.mp4")
     if choice != "auto":
-        if not encoder_works(choice):
+        if not encoder_works(choice, probe_path):
             sys.exit(f"error: encoder {choice} is not available on this system")
         return choice
     for name in HW_ENCODERS:
-        if encoder_works(name):
+        if encoder_works(name, probe_path):
             return name
-    if not encoder_works("libx264"):
+    if not encoder_works("libx264", probe_path):
         sys.exit("error: no usable H.264 encoder (tried "
                  + ", ".join(HW_ENCODERS) + ", libx264)")
     return "libx264"
@@ -545,11 +543,20 @@ def pack(items, max_dur, max_bytes):
 # main
 # --------------------------------------------------------------------------------------
 
-def process(src, args, workdir, index):
+def video_workdir(outdir, name):
+    """Per-source folder under -o for all intermediates and finished reels."""
+    path = os.path.join(outdir, f"tennis_reels_{name}")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def process(src, args, index):
     name = os.path.splitext(os.path.basename(src))[0]
+    workdir = video_workdir(args.outdir, name)
     info = probe(src)
     log(f"{os.path.basename(src)}: {info['width']}x{info['height']} "
         f"{info['fps']:.2f}fps {info['codec']} {info['duration']:.0f}s")
+    log(f"  workdir: {workdir}")
 
     audio_ok = has_audio(src)
     if not audio_ok:
@@ -586,7 +593,7 @@ def process(src, args, workdir, index):
     log(f"  {len(segs)} rallies, {total:.0f}s kept ({frac * 100:.0f}% of usable footage), "
         f"density threshold {thresh:.2f}")
 
-    cutlist = os.path.join(args.outdir, f"{name}_cuts.csv")
+    cutlist = os.path.join(workdir, f"{name}_cuts.csv")
     write_cutlist(cutlist, os.path.abspath(src), segs)
     log(f"  cut list: {cutlist}")
 
@@ -621,7 +628,8 @@ def process(src, args, workdir, index):
         {"path": job[4], "dur": job[2], "size": size}
         for job, size in zip(jobs, sizes)
     ]
-    return [{"name": name, "index": index, "dar": dar, "items": rendered}]
+    return [{"name": name, "index": index, "dar": dar, "workdir": workdir,
+             "items": rendered}]
 
 
 def main():
@@ -630,7 +638,8 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("-i", "--input", nargs="+", required=True,
                    help="source video file(s) and/or folder(s) of videos")
-    p.add_argument("-o", "--outdir", default="./reels", help="where finished reels go")
+    p.add_argument("-o", "--outdir", default="./reels",
+                   help="parent dir for per-video folders tennis_reels_<filename>/")
     p.add_argument("--keep", type=float, default=0.55,
                    help="target share of usable footage to retain (0-1); lower = tighter")
     p.add_argument("--max-duration", type=float, default=240.0, help="max reel length, seconds")
@@ -655,17 +664,11 @@ def main():
                    help="keep footage even if the camera framing changes")
     p.add_argument("--dry-run", action="store_true",
                    help="analyse, write cut-list CSV, render nothing")
-    p.add_argument("--workdir", default=None, help="scratch dir (default: a temp dir, removed on exit)")
     args = p.parse_args()
 
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
             sys.exit(f"error: {tool} not found on PATH")
-
-    choice = args.encoder
-    args.encoder = resolve_encoder(choice)
-    log(f"encoder: {args.encoder}" + (f" (from --encoder {choice})" if choice != "auto"
-                                       else " (auto)"))
 
     if args.crop:
         try:
@@ -676,37 +679,35 @@ def main():
             sys.exit("error: --crop must look like 1320x900+240+110")
 
     os.makedirs(args.outdir, exist_ok=True)
-    tmp = args.workdir or tempfile.mkdtemp(prefix="tennis_reels_")
-    os.makedirs(tmp, exist_ok=True)
-    log(f"workdir: {tmp}")
 
-    try:
-        sources = expand_inputs(args.input)
-        log(f"inputs: {len(sources)} video(s)")
-        groups = []
-        for n, src in enumerate(sources, 1):
-            groups += process(src, args, tmp, n)
+    choice = args.encoder
+    args.encoder = resolve_encoder(choice, args.outdir)
+    log(f"encoder: {args.encoder}" + (f" (from --encoder {choice})" if choice != "auto"
+                                       else " (auto)"))
 
-        if args.dry_run:
-            return
+    sources = expand_inputs(args.input)
+    log(f"inputs: {len(sources)} video(s)")
+    groups = []
+    for n, src in enumerate(sources, 1):
+        groups += process(src, args, n)
 
-        max_bytes = int(args.max_size_mb * 1000 * 1000) if args.max_size_mb else 0
-        written = []
-        for g in groups:
-            reels = pack(g["items"], args.max_duration, max_bytes)
-            for i, reel in enumerate(reels, 1):
-                suffix = f"_{i}" if len(reels) > 1 else ""
-                out = os.path.join(args.outdir, f"{g['name']}_reel{suffix}.mp4")
-                concat([r["path"] for r in reel], out, tmp, g["dar"])
-                dur = sum(r["dur"] for r in reel)
-                size = os.path.getsize(out) / 1e6
-                log(f"wrote {out}  {int(dur // 60)}:{int(dur % 60):02d}  {size:.0f} MB")
-                written.append(out)
+    if args.dry_run:
+        return
 
-        log(f"done - {len(written)} reel(s) in {args.outdir}")
-    finally:
-        if not args.workdir:
-            shutil.rmtree(tmp, ignore_errors=True)
+    max_bytes = int(args.max_size_mb * 1000 * 1000) if args.max_size_mb else 0
+    written = []
+    for g in groups:
+        reels = pack(g["items"], args.max_duration, max_bytes)
+        for i, reel in enumerate(reels, 1):
+            suffix = f"_{i}" if len(reels) > 1 else ""
+            out = os.path.join(g["workdir"], f"{g['name']}_reel{suffix}.mp4")
+            concat([r["path"] for r in reel], out, g["workdir"], g["dar"])
+            dur = sum(r["dur"] for r in reel)
+            size = os.path.getsize(out) / 1e6
+            log(f"wrote {out}  {int(dur // 60)}:{int(dur % 60):02d}  {size:.0f} MB")
+            written.append(out)
+
+    log(f"done - {len(written)} reel(s) under {args.outdir}")
 
 
 if __name__ == "__main__":

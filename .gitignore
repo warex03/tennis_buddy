@@ -1,2 +1,6 @@
 __pycache__/
 *.py[cod]
+
+short-balls/inputs/
+short-balls/outputs/
+short-balls/reels/

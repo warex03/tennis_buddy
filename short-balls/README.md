@@ -39,7 +39,8 @@ to ffmpeg for everything media-related.
   music in-app).
 - **Dry-run mode.** Print the cut list in seconds before committing CPU to encoding.
 - **Cut-list sidecar.** After analysis (including `--dry-run`), writes
-  `{source}_cuts.csv` in `-o` with each kept rally — no encoding required.
+  `{source}_cuts.csv` in `-o/tennis_reels_<filename>/` with each kept rally —
+  no encoding required.
 
 ---
 
@@ -49,24 +50,45 @@ to ffmpeg for everything media-related.
 
 ## Usage
 
+### From the repo root (Makefile)
+
+Put source videos in `short-balls/inputs`, then from the repo root:
+
+```bash
+make build          # first time
+make run            # encode → short-balls/reels
+make dry-run        # analyse + cut-list CSV only
+```
+
+Extra flags via `ARGS`; a specific file/folder via `INPUT` (path inside the container):
+
+```bash
+make dry-run INPUT=inputs/1.MP4
+make run ARGS='--keep 0.4 --mute'
+make help           # list targets
+```
+
+### From this directory (Docker Compose)
+
 Put source videos in `./inputs`, then:
 
 ```bash
-docker compose run --rm --cpus 8 tennis-reels -i inputs
+docker compose run --rm tennis-reels -i inputs
 ```
 
-`-i` accepts files and/or folders; a folder expands to all videos inside (`.mp4`, `.mov`, `.mkv`, `.avi`, `.m4v`, `.webm`). Host mounts: `./inputs` → `/work/inputs`, `./reels` → `/work/reels` (default `-o`).
+`-i` accepts files and/or folders; a folder expands to all videos inside (`.mp4`, `.mov`, `.mkv`, `.avi`, `.m4v`, `.webm`). Host mounts: `./inputs` → `/work/inputs`, `./reels` → `/work/reels` (default `-o`). For each source video, outputs land in `-o/tennis_reels_<filename>/` (intermediates, cut list, and finished reels) — nothing is written under `/tmp`.
 
 See the cut list without spending time on encoding:
 
 ```bash
-python3 tennis_reels.py -i 1.MP4 --dry-run
+make dry-run INPUT=inputs/1.MP4
 ```
 
 ### Cut-list CSV
 
-After analysis (including `--dry-run`), each source gets `{basename}_cuts.csv` in
-`-o` / `--outdir`. Columns (seconds, 3 decimal places):
+After analysis (including `--dry-run`), each source gets
+`-o/tennis_reels_<basename>/{basename}_cuts.csv`. Columns (seconds, 3 decimal
+places):
 
 | Column | Meaning |
 | --- | --- |
@@ -155,7 +177,7 @@ music in-app.
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `-i`, `--input` | — | Source video file(s) and/or folder(s) of videos |
-| `-o`, `--outdir` | `./reels` | Where finished reels are written |
+| `-o`, `--outdir` | `./reels` | Parent of per-video `tennis_reels_<filename>/` folders |
 | `--keep` | `0.55` | Target share of usable footage to retain; lower is tighter |
 | `--max-duration` | `240` | Max reel length in seconds |
 | `--max-size-mb` | `100` | Max reel size; `0` disables the size cap |
@@ -169,7 +191,6 @@ music in-app.
 | `--crop` | auto | Override the action region, as `WxH+X+Y` |
 | `--no-framing-check` | off | Keep footage even when the camera framing changes |
 | `--dry-run` | off | Analyse, write cut-list CSV, render nothing |
-| `--workdir` | temp dir | Scratch directory; kept if you pass one explicitly |
 
 ---
 

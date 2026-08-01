@@ -6,5 +6,7 @@ RUN apt-get update \
 
 WORKDIR /work
 COPY tennis_reels.py /usr/local/bin/tennis_reels.py
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENTRYPOINT ["python3", "/usr/local/bin/tennis_reels.py"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
