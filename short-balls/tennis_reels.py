@@ -42,8 +42,31 @@ import numpy as np
 # small helpers
 # --------------------------------------------------------------------------------------
 
+VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"}
+
+
 def log(msg):
     print(f"[reels] {msg}", flush=True)
+
+
+def expand_inputs(paths):
+    """Resolve -i paths: files as-is, directories to video files inside (non-recursive)."""
+    files = []
+    for p in paths:
+        if not os.path.exists(p):
+            sys.exit(f"error: no such file or directory: {p}")
+        if os.path.isdir(p):
+            found = sorted(
+                os.path.join(p, name) for name in os.listdir(p)
+                if os.path.isfile(os.path.join(p, name))
+                and os.path.splitext(name)[1].lower() in VIDEO_EXTS
+            )
+            if not found:
+                sys.exit(f"error: no video files in {p}")
+            files.extend(found)
+        else:
+            files.append(p)
+    return files
 
 
 def run(cmd, **kw):
@@ -474,7 +497,8 @@ def main():
     p = argparse.ArgumentParser(
         description="Cut static-camera tennis footage into vertical highlight reels.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("-i", "--input", nargs="+", required=True, help="source video file(s)")
+    p.add_argument("-i", "--input", nargs="+", required=True,
+                   help="source video file(s) and/or folder(s) of videos")
     p.add_argument("-o", "--outdir", default="./reels", help="where finished reels go")
     p.add_argument("--keep", type=float, default=0.55,
                    help="target share of usable footage to retain (0-1); lower = tighter")
@@ -514,10 +538,10 @@ def main():
     log(f"workdir: {tmp}")
 
     try:
+        sources = expand_inputs(args.input)
+        log(f"inputs: {len(sources)} video(s)")
         groups = []
-        for n, src in enumerate(args.input, 1):
-            if not os.path.exists(src):
-                sys.exit(f"error: no such file: {src}")
+        for n, src in enumerate(sources, 1):
             groups += process(src, args, tmp, n)
 
         if args.dry_run:

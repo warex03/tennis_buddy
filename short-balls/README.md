@@ -46,16 +46,10 @@ to ffmpeg for everything media-related.
 Put source videos in `./inputs`, then:
 
 ```bash
-docker compose run --rm --cpus 8 tennis-reels -i inputs/1.MP4 inputs/2.MP4
+docker compose run --rm --cpus 8 tennis-reels -i inputs
 ```
 
-Host mounts: `./inputs` → `/work/inputs`, `./reels` → `/work/reels` (default `-o`).
-
-Or directly, on any machine with ffmpeg and numpy:
-
-```bash
-python3 tennis_reels.py -i 1.MP4 2.MP4 -o reels
-```
+`-i` accepts files and/or folders; a folder expands to all videos inside (`.mp4`, `.mov`, `.mkv`, `.avi`, `.m4v`, `.webm`). Host mounts: `./inputs` → `/work/inputs`, `./reels` → `/work/reels` (default `-o`).
 
 See the cut list without spending time on encoding:
 
@@ -123,7 +117,7 @@ music in-app.
 
 | Flag | Default | What it does |
 | --- | --- | --- |
-| `-i`, `--input` | — | One or more source videos |
+| `-i`, `--input` | — | Source video file(s) and/or folder(s) of videos |
 | `-o`, `--outdir` | `./reels` | Where finished reels are written |
 | `--keep` | `0.55` | Target share of usable footage to retain; lower is tighter |
 | `--max-duration` | `240` | Max reel length in seconds |
