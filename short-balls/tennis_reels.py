@@ -28,6 +28,7 @@ assembled with a stream copy, so the footage is encoded exactly once.
 import argparse
 import json
 import math
+import multiprocessing
 import os
 import shutil
 import subprocess
@@ -356,6 +357,13 @@ def render_segment(src, start, dur, crop, out_path, args, out_w, out_h, keep_aud
     run(cmd)
 
 
+def _render_job(job):
+    """Worker entry point: encode one rally, return its output byte size."""
+    src, start, dur, crop, out_path, args, out_w, out_h, keep_audio = job
+    render_segment(src, start, dur, crop, out_path, args, out_w, out_h, keep_audio)
+    return os.path.getsize(out_path)
+
+
 def concat(parts, out_path, workdir, dar):
     listfile = os.path.join(workdir, f"concat_{os.path.basename(out_path)}.txt")
     with open(listfile, "w") as f:
@@ -442,12 +450,23 @@ def process(src, args, workdir, index):
         g = math.gcd(out_w, out_h)
         dar = f"{out_w // g}:{out_h // g}"
 
-    rendered = []
-    for i, (s, e) in enumerate(segs):
-        part = os.path.join(workdir, f"{name}_seg{i:03d}.mp4")
-        log(f"  rendering rally {i + 1}/{len(segs)} ({e - s:.1f}s)")
-        render_segment(src, s, e - s, crop, part, args, out_w, out_h, audio_ok)
-        rendered.append({"path": part, "dur": e - s, "size": os.path.getsize(part)})
+    jobs = [
+        (src, s, e - s, crop, os.path.join(workdir, f"{name}_seg{i:03d}.mp4"),
+         args, out_w, out_h, audio_ok)
+        for i, (s, e) in enumerate(segs)
+    ]
+    workers = max(1, min(len(jobs), os.cpu_count() or 1))
+    log(f"  rendering {len(jobs)} rallies with {workers} workers")
+    try:
+        with multiprocessing.Pool(workers) as pool:
+            sizes = pool.map(_render_job, jobs)
+    except Exception as exc:
+        sys.exit(f"error: rally encode failed: {exc}")
+
+    rendered = [
+        {"path": job[4], "dur": job[2], "size": size}
+        for job, size in zip(jobs, sizes)
+    ]
     return [{"name": name, "index": index, "dar": dar, "items": rendered}]
 
 

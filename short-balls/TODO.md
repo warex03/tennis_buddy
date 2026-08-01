@@ -6,8 +6,9 @@ Keep the tool dependency-light: `python3`, `numpy`, `ffmpeg`, `ffprobe` only —
 
 ---
 
-## 1. Parallelize segment encoding
+## 1. Parallelize segment encoding — DONE
 
+Done 2026-08-01: `multiprocessing.Pool` sized to CPU count; segment order/naming preserved; README updated. No `--jobs` flag.
 ```
 In short-balls/tennis_reels.py, segment rendering is serial in process() around the loop that calls render_segment for each rally. Parallelize rally encoding with multiprocessing (stdlib only): each rally is independent. Size the worker pool from CPU count (or an optional --jobs N flag). Preserve deterministic output naming/order so pack() and concat still work. Handle worker failures cleanly (fail the run with a clear error). Do not change the encode filter graph or quality settings. Update short-balls/README.md briefly if you add --jobs. Keep the change minimal.
 ```

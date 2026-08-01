@@ -29,6 +29,8 @@ to ffmpeg for everything media-related.
   length and a max file size, splitting only on rally boundaries.
 - **Encoded exactly once.** Rallies are encoded individually and reels are
   assembled with a stream copy, so later trims and splits cost nothing in quality.
+- **Parallel rally encoding.** Independent rallies encode concurrently via a
+  `multiprocessing` pool sized to CPU count.
 - **Original quality preserved.** 60 fps retained, CRF 17, lanczos downscale,
   square pixels, original court audio (or `--mute` to add music in-app).
 - **Dry-run mode.** Print the cut list in seconds before committing CPU to encoding.
@@ -102,10 +104,11 @@ output.
 
 **7. Encode once, assemble with copies.** Each rally is encoded separately (x264
 CRF 17, lanczos downscale, 60fps preserved, 80ms audio fades to avoid clicks at
-the joins). Reels are then bin-packed by both duration and *actual measured file
-size*, and joined with `-c copy`. Splitting or trimming a reel later — like your
-45s cut and the 100MB split — just re-concatenates different subsets, no
-re-encoding, no generation loss.
+the joins), in parallel across a process pool sized to CPU count. Segment names
+and order stay fixed so packing is unchanged. Reels are then bin-packed by both
+duration and *actual measured file size*, and joined with `-c copy`. Splitting
+or trimming a reel later — like your 45s cut and the 100MB split — just
+re-concatenates different subsets, no re-encoding, no generation loss.
 
 Useful knobs: `--keep 0.4` for a tighter cut, `--dry-run` to see the cut list
 before committing CPU, `--crop` to override the region, `--mute` if you'll add
@@ -183,9 +186,8 @@ Roughly in order of value for effort.
 9. **Use hardware encoding when available.** `h264_nvenc` or `h264_qsv` will cut
    encode time by an order of magnitude for a small quality cost. Detect support
    at startup and fall back to libx264.
-10. **Parallelise segment rendering.** Every rally is independent, so a
-    `multiprocessing.Pool` sized to core count is a straightforward win over
-    ffmpeg's internal threading, which scales poorly past ~8 cores at 1080p.
+10. ~~**Parallelise segment rendering.**~~ Done — `multiprocessing.Pool` sized to
+    CPU count encodes rallies concurrently.
 11. **Cache the analysis.** Onsets, invalid ranges and the crop box are
     deterministic per input. Write them to a JSON sidecar so re-running with a
     different `--keep` skips straight to encoding.
