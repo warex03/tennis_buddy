@@ -50,12 +50,10 @@ In short-balls/tennis_reels.py, sample_keyframes() loads all keyframes and immed
 
 ---
 
-## 6. Hardware encoding with libx264 fallback — DONE
+## 6. Hardware encoding — REMOVED
 
-Done 2026-08-01: startup probe (encoder help + 1-frame test) for nvenc/qsv/videotoolbox → libx264; `--encoder`; `--crf`/`--preset` mapped; yuv420p+faststart kept; README updated.
-```
-In short-balls/tennis_reels.py, detect available hardware H.264 encoders at startup (e.g. h264_nvenc, h264_qsv, maybe VideoToolbox on macOS) and use one when available; fall back to libx264. Map --crf/--preset reasonably onto the HW encoder (or document that HW mode uses a near-equivalent quality flag). Add --encoder auto|libx264|h264_nvenc|h264_qsv (or similar) so users can force a choice. Keep output playable (yuv420p, faststart) and compatible with the existing concat -c copy path. Document in short-balls/README.md. No new Python dependencies. Minimal, reliable detection (probe encoder help or a tiny test encode).
-```
+Removed 2026-08-01: dropped HW encoder probe/`--encoder` and Docker GPU setup;
+encode is libx264 only.
 
 ---
 

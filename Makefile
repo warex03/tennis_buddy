@@ -36,7 +36,7 @@ help:
 	@echo "Examples:"
 	@echo "  make run"
 	@echo "  make dry-run INPUT=inputs/1.MP4"
-	@echo "  make run ARGS='--keep 0.4 --mute --encoder libx264'"
+	@echo "  make run ARGS='--keep 0.4 --mute'"
 
 build:
 	$(COMPOSE) build

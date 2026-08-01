@@ -2,12 +2,9 @@ services:
   tennis-reels:
     build: ./short-balls
     image: tennis-reels
-    gpus: all
     environment:
       HOST_UID: ${UID:-1000}
       HOST_GID: ${GID:-1000}
-      # Needed so the toolkit injects libnvidia-encode (NVENC). Harmless without a GPU.
-      NVIDIA_DRIVER_CAPABILITIES: all
     volumes:
       - type: bind
         source: ./short-balls/inputs

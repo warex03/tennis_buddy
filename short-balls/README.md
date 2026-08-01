@@ -30,13 +30,10 @@ to ffmpeg for everything media-related.
 - **Encoded exactly once.** Rallies are encoded individually and reels are
   assembled with a stream copy, so later trims and splits cost nothing in quality.
 - **Parallel rally encoding.** Independent rallies encode concurrently via a
-  `multiprocessing` pool sized to CPU count.
-- **Hardware encoding when available.** At startup, tries `h264_nvenc`,
-  `h264_qsv`, then `h264_videotoolbox` with a 1-frame test encode; falls back to
-  `libx264`. Override with `--encoder`.
-- **Original quality preserved.** 60 fps retained, CRF 17 (or HW near-equivalent),
-  lanczos downscale, square pixels, original court audio (or `--mute` to add
-  music in-app).
+  `multiprocessing` pool (`--jobs`; auto = CPU count).
+- **libx264 encode.** Software H.264 for broad player compatibility.
+- **Original quality preserved.** 60 fps retained, CRF 17, lanczos downscale,
+  square pixels, original court audio (or `--mute` to add music in-app).
 - **Dry-run mode.** Print the cut list in seconds before committing CPU to encoding.
 - **Cut-list sidecar.** After analysis (including `--dry-run`), writes
   `{source}_cuts.csv` in `-o/tennis_reels_<filename>/` with each kept rally —
@@ -47,53 +44,6 @@ to ffmpeg for everything media-related.
 ## Requirements
 
 `ffmpeg`, `ffprobe`, `python3`, `numpy`. Nothing else — no pip install step.
-
-### Hardware encoding (NVIDIA + Docker on WSL2)
-
-With `--encoder auto` (default), the container tries `h264_nvenc` first. That
-only works if Docker can see the GPU. On WSL2 with Docker Engine inside Linux:
-
-1. **Windows NVIDIA driver** on the host (Game Ready or Studio). Do **not**
-   install Linux NVIDIA drivers inside WSL — the Windows driver is mapped in.
-   Confirm in WSL: `nvidia-smi` lists your GPU.
-2. **NVIDIA Container Toolkit** in the WSL distro (Ubuntu example):
-
-```bash
-sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-  ca-certificates curl gnupg2
-
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo service docker restart
-```
-
-If Docker won't restart cleanly, from PowerShell/CMD run `wsl --shutdown`,
-reopen WSL, then `sudo service docker start`.
-
-3. **Verify** GPU passthrough:
-
-```bash
-docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
-```
-
-4. **This project** already requests a GPU via `gpus: all` and sets
-   `NVIDIA_DRIVER_CAPABILITIES=all` in the repo-root `docker-compose.yml`
-   (the latter mounts `libnvidia-encode` for NVENC). After the toolkit is
-   installed, `make run` should log `encoder: h264_nvenc`. Force it with
-   `make run ARGS='--encoder h264_nvenc'`.
-
-**WSL tip:** if `--gpus all` still fails, set `no-cgroups = true` in
-`/etc/nvidia-container-runtime/config.toml` and restart Docker.
-
-Official guide: [Installing the NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
 ## Usage
 
@@ -203,25 +153,14 @@ and the heavily downscaled background branch carried SAR 352:135 into the overla
 output.
 
 **8. Encode once, assemble with copies.** Each rally is encoded separately
-(H.264 via auto-selected encoder, default quality ≈ CRF 17, lanczos downscale,
-60fps preserved, 80ms audio fades to avoid clicks at the joins), in parallel
-across a process pool sized to CPU count. Segments stay `yuv420p` + `faststart`
+(H.264 via `libx264`, quality ≈ CRF 17, lanczos downscale, 60fps preserved,
+80ms audio fades to avoid clicks at the joins), in parallel across a process
+pool (`--jobs`; auto uses CPU count). Segments stay `yuv420p` + `faststart`
 so the later `-c copy` concat stays playable. Segment names and order stay fixed
 so packing is unchanged. Reels are then bin-packed by both duration and *actual
 measured file size*, and joined with `-c copy`. Splitting or trimming a reel
 later — like your 45s cut and the 100MB split — just re-concatenates different
 subsets, no re-encoding, no generation loss.
-
-**Encoder selection.** `--encoder auto` (default) probes `h264_nvenc`,
-`h264_qsv`, `h264_videotoolbox` in that order with a tiny test encode, then
-`libx264`. Force any of those names to skip auto. `--crf` / `--preset` map as:
-
-| Encoder | Quality flag | Preset |
-| --- | --- | --- |
-| `libx264` | `-crf` | as given |
-| `h264_nvenc` | `-cq` (same number as `--crf`) | x264 names → `p1`…`p7` |
-| `h264_qsv` | `-global_quality` (same number) | x264-like names |
-| `h264_videotoolbox` | `-q:v` ≈ `100 - 2*crf` (higher = better) | unused |
 
 Useful knobs: `--keep 0.4` for a tighter cut, `--dry-run` to see the cut list
 before committing CPU, `--crop` to override the region, `--mute` if you'll add
@@ -240,9 +179,9 @@ music in-app.
 | `--max-size-mb` | `100` | Max reel size; `0` disables the size cap |
 | `--layout` | `vertical` | `vertical` = 9:16 on a blurred backdrop, `original` = keep the crop's aspect |
 | `--width` | `1080` | Output width in pixels |
-| `--encoder` | `auto` | `auto` \| `libx264` \| `h264_nvenc` \| `h264_qsv` \| `h264_videotoolbox` |
-| `--crf` | `17` | Quality; lower is better. Maps to HW CQ / global_quality / VT `-q:v` (see above) |
-| `--preset` | `veryfast` | Speed preset (libx264/qsv; nvenc remaps to `p1`–`p7`) |
+| `--jobs` | `0` (auto) | Parallel rally encodes; auto = CPU count |
+| `--crf` | `17` | libx264 quality; lower is better |
+| `--preset` | `veryfast` | libx264 speed preset |
 | `--audio-bitrate` | `192k` | AAC bitrate |
 | `--mute` | off | Drop audio entirely |
 | `--crop` | auto | Override the action region, as `WxH+X+Y` |
@@ -296,25 +235,22 @@ Roughly in order of value for effort.
 
 ### Performance
 
-9. ~~**Use hardware encoding when available.**~~ Done — auto-detect
-   `h264_nvenc` / `h264_qsv` / `h264_videotoolbox` (tiny test encode), fall back
-   to `libx264`; `--encoder` to force; `--crf`/`--preset` mapped per encoder.
-10. ~~**Parallelise segment rendering.**~~ Done — `multiprocessing.Pool` sized to
-    CPU count encodes rallies concurrently.
-11. **Cache the analysis.** Onsets, invalid ranges and the crop box are
+9. ~~**Parallelise segment rendering.**~~ Done — `multiprocessing.Pool` sized to
+   CPU count encodes rallies concurrently.
+10. **Cache the analysis.** Onsets, invalid ranges and the crop box are
     deterministic per input. Write them to a JSON sidecar so re-running with a
     different `--keep` skips straight to encoding.
-12. ~~**Reuse one decode pass.**~~ Done — `extract_analysis()` writes mono WAV and
+11. ~~**Reuse one decode pass.**~~ Done — `extract_analysis()` writes mono WAV and
     grayscale keyframe rawvideo from one ffmpeg invocation with two outputs.
 
 ### Usability
 
-13. ~~**Emit a cut-list sidecar**~~ Done — `{basename}_cuts.csv` in `-o` after
+12. ~~**Emit a cut-list sidecar**~~ Done — `{basename}_cuts.csv` in `-o` after
     analysis (including `--dry-run`): `source,start,end,duration`.
-14. **Add a contact-sheet QA mode** that tiles a frame every N seconds from each
+13. **Add a contact-sheet QA mode** that tiles a frame every N seconds from each
     finished reel. This is how the cuts were verified by eye during development
     and it catches a bad detection in one glance.
-15. **Support other framings.** The current assumptions — static camera, behind
+14. **Support other framings.** The current assumptions — static camera, behind
     the baseline, players roughly symmetric about centre — hold for your setup but
     not for a side-on or elevated camera. At minimum, detect and warn when the
     action region fills most of the frame width, which is the signal that the
