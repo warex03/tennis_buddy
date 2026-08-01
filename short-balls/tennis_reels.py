@@ -146,7 +146,10 @@ def detect_onsets(wav_path, lo=1200, hi=9000, z_thresh=6.0, refractory=0.18):
     dt = hop / sr
     win = int(1.5 / dt)                             # local background over ~1.5 s
     padded = np.pad(flux, (win // 2, win // 2), mode="edge")
-    med = np.array([np.median(padded[i:i + win]) for i in range(0, len(flux), 8)])
+    # Strided rolling median every 8 frames (same windows as the old list-comp).
+    # Cost ~O((n/8)·win log win) in C via sliding_window_view + np.median.
+    med = np.median(
+        np.lib.stride_tricks.sliding_window_view(padded, win)[:len(flux):8], axis=1)
     med = np.repeat(med, 8)[:len(flux)]
     mad = np.median(np.abs(flux - med)) + 1e-6
     z = (flux - med) / mad                          # robust, loudness-independent

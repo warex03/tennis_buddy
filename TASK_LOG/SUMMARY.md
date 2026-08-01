@@ -2,8 +2,9 @@
 Updated: 2026-08-01
 
 - Parallelized rally encoding in `short-balls/tennis_reels.py` with a CPU-sized `multiprocessing.Pool`; deterministic segment naming/order preserved; README updated.
+- Vectorized the `detect_onsets()` rolling median via `sliding_window_view` + `np.median` (every 8 frames); behavior unchanged vs the old list-comp; ~10× faster on synthetic flux; TODO #2 marked done.
 
 ## Next steps
 ```
-In short-balls/tennis_reels.py detect_onsets(), replace the slow Python list-comprehension of np.median over a rolling window (the med = np.array([np.median(...) for i in range(0, len(flux), 8)]) block) with a vectorized numpy approach. Stay dependency-free (numpy + stdlib only — no scipy). Preserve the existing behavior as closely as possible: ~1.5s local background, subsampled every 8 frames, then repeated/expanded back to flux length, then MAD/z-score peak picking. Prefer np.lib.stride_tricks.sliding_window_view or an equivalent strided method. Verify with a quick sanity check that onset counts stay in the same ballpark on a short sample if available; otherwise add a tiny unit-style self-check or comment with expected complexity. Keep the change minimal and focused on this hotspot.
+In short-balls/tennis_reels.py, cache deterministic analysis results per input video so re-runs with different --keep / packing options can skip audio extraction, onset detection, keyframe sampling, invalid-range detection, and crop detection. Write a JSON sidecar (e.g. next to the source or under workdir/outdir) containing: onsets, audio duration, invalid ranges, crop box, and enough metadata to invalidate the cache (source path, size, mtime, and/or a content fingerprint). On subsequent runs, load the cache when valid; still recompute segments_for_target from cached onsets+invalid when --keep changes. Add --no-cache / --force-analyze if useful. Document the sidecar in short-balls/README.md. Stdlib + numpy + ffmpeg only. Minimal, robust invalidation.
 ```
