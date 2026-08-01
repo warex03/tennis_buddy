@@ -31,8 +31,12 @@ to ffmpeg for everything media-related.
   assembled with a stream copy, so later trims and splits cost nothing in quality.
 - **Parallel rally encoding.** Independent rallies encode concurrently via a
   `multiprocessing` pool sized to CPU count.
-- **Original quality preserved.** 60 fps retained, CRF 17, lanczos downscale,
-  square pixels, original court audio (or `--mute` to add music in-app).
+- **Hardware encoding when available.** At startup, tries `h264_nvenc`,
+  `h264_qsv`, then `h264_videotoolbox` with a 1-frame test encode; falls back to
+  `libx264`. Override with `--encoder`.
+- **Original quality preserved.** 60 fps retained, CRF 17 (or HW near-equivalent),
+  lanczos downscale, square pixels, original court audio (or `--mute` to add
+  music in-app).
 - **Dry-run mode.** Print the cut list in seconds before committing CPU to encoding.
 - **Cut-list sidecar.** After analysis (including `--dry-run`), writes
   `{source}_cuts.csv` in `-o` with each kept rally — no encoding required.
@@ -119,13 +123,26 @@ scale filter compensates for aspect changes by adjusting the sample aspect ratio
 and the heavily downscaled background branch carried SAR 352:135 into the overlay
 output.
 
-**8. Encode once, assemble with copies.** Each rally is encoded separately (x264
-CRF 17, lanczos downscale, 60fps preserved, 80ms audio fades to avoid clicks at
-the joins), in parallel across a process pool sized to CPU count. Segment names
-and order stay fixed so packing is unchanged. Reels are then bin-packed by both
-duration and *actual measured file size*, and joined with `-c copy`. Splitting
-or trimming a reel later — like your 45s cut and the 100MB split — just
-re-concatenates different subsets, no re-encoding, no generation loss.
+**8. Encode once, assemble with copies.** Each rally is encoded separately
+(H.264 via auto-selected encoder, default quality ≈ CRF 17, lanczos downscale,
+60fps preserved, 80ms audio fades to avoid clicks at the joins), in parallel
+across a process pool sized to CPU count. Segments stay `yuv420p` + `faststart`
+so the later `-c copy` concat stays playable. Segment names and order stay fixed
+so packing is unchanged. Reels are then bin-packed by both duration and *actual
+measured file size*, and joined with `-c copy`. Splitting or trimming a reel
+later — like your 45s cut and the 100MB split — just re-concatenates different
+subsets, no re-encoding, no generation loss.
+
+**Encoder selection.** `--encoder auto` (default) probes `h264_nvenc`,
+`h264_qsv`, `h264_videotoolbox` in that order with a tiny test encode, then
+`libx264`. Force any of those names to skip auto. `--crf` / `--preset` map as:
+
+| Encoder | Quality flag | Preset |
+| --- | --- | --- |
+| `libx264` | `-crf` | as given |
+| `h264_nvenc` | `-cq` (same number as `--crf`) | x264 names → `p1`…`p7` |
+| `h264_qsv` | `-global_quality` (same number) | x264-like names |
+| `h264_videotoolbox` | `-q:v` ≈ `100 - 2*crf` (higher = better) | unused |
 
 Useful knobs: `--keep 0.4` for a tighter cut, `--dry-run` to see the cut list
 before committing CPU, `--crop` to override the region, `--mute` if you'll add
@@ -144,8 +161,9 @@ music in-app.
 | `--max-size-mb` | `100` | Max reel size; `0` disables the size cap |
 | `--layout` | `vertical` | `vertical` = 9:16 on a blurred backdrop, `original` = keep the crop's aspect |
 | `--width` | `1080` | Output width in pixels |
-| `--crf` | `17` | x264 quality; lower is better, 17 is near-transparent |
-| `--preset` | `veryfast` | x264 speed preset |
+| `--encoder` | `auto` | `auto` \| `libx264` \| `h264_nvenc` \| `h264_qsv` \| `h264_videotoolbox` |
+| `--crf` | `17` | Quality; lower is better. Maps to HW CQ / global_quality / VT `-q:v` (see above) |
+| `--preset` | `veryfast` | Speed preset (libx264/qsv; nvenc remaps to `p1`–`p7`) |
 | `--audio-bitrate` | `192k` | AAC bitrate |
 | `--mute` | off | Drop audio entirely |
 | `--crop` | auto | Override the action region, as `WxH+X+Y` |
@@ -200,9 +218,9 @@ Roughly in order of value for effort.
 
 ### Performance
 
-9. **Use hardware encoding when available.** `h264_nvenc` or `h264_qsv` will cut
-   encode time by an order of magnitude for a small quality cost. Detect support
-   at startup and fall back to libx264.
+9. ~~**Use hardware encoding when available.**~~ Done — auto-detect
+   `h264_nvenc` / `h264_qsv` / `h264_videotoolbox` (tiny test encode), fall back
+   to `libx264`; `--encoder` to force; `--crf`/`--preset` mapped per encoder.
 10. ~~**Parallelise segment rendering.**~~ Done — `multiprocessing.Pool` sized to
     CPU count encodes rallies concurrently.
 11. **Cache the analysis.** Onsets, invalid ranges and the crop box are

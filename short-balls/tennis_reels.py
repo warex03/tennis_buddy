@@ -379,8 +379,86 @@ def write_cutlist(path, src, segs):
 
 
 # --------------------------------------------------------------------------------------
-# 4. rendering
+# 4. rendering / encoder selection
 # --------------------------------------------------------------------------------------
+
+# Preference order for --encoder auto. libx264 is always the last-resort fallback.
+HW_ENCODERS = ("h264_nvenc", "h264_qsv", "h264_videotoolbox")
+ENCODER_CHOICES = ("auto", "libx264") + HW_ENCODERS
+
+# Map libx264-style presets onto NVENC p1 (fastest) .. p7 (slowest / best).
+_NVENC_PRESET = {
+    "ultrafast": "p1", "superfast": "p1", "veryfast": "p3", "faster": "p4",
+    "fast": "p5", "medium": "p6", "slow": "p7", "slower": "p7", "veryslow": "p7",
+}
+
+
+def ffmpeg_knows_encoder(name):
+    """True if ffmpeg was built with this encoder (device may still be missing)."""
+    r = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-h", f"encoder={name}"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    blob = r.stdout + r.stderr
+    return "Unknown encoder" not in blob and f"Encoder {name}" in blob
+
+
+def encoder_works(name):
+    """Tiny 1-frame encode: catches 'compiled in' but no GPU / driver cases."""
+    if name == "libx264":
+        return ffmpeg_knows_encoder(name)
+    if not ffmpeg_knows_encoder(name):
+        return False
+    fd, path = tempfile.mkstemp(suffix=".mp4")
+    os.close(fd)
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error",
+             "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.1",
+             "-frames:v", "1", "-c:v", name, "-pix_fmt", "yuv420p",
+             path, "-y"],
+            capture_output=True, stdin=subprocess.DEVNULL)
+        return r.returncode == 0
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def resolve_encoder(choice):
+    """Pick a concrete encoder name. auto tries HW then libx264."""
+    if choice != "auto":
+        if not encoder_works(choice):
+            sys.exit(f"error: encoder {choice} is not available on this system")
+        return choice
+    for name in HW_ENCODERS:
+        if encoder_works(name):
+            return name
+    if not encoder_works("libx264"):
+        sys.exit("error: no usable H.264 encoder (tried "
+                 + ", ".join(HW_ENCODERS) + ", libx264)")
+    return "libx264"
+
+
+def video_encode_args(encoder, crf, preset):
+    """ffmpeg -c:v … flags. --crf/--preset map to near-equivalent HW knobs."""
+    if encoder == "libx264":
+        return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf)]
+    if encoder == "h264_nvenc":
+        # --crf -> -cq (VBR CQ mode); same numeric scale is a close match.
+        p = _NVENC_PRESET.get(preset, preset if preset.startswith("p") else "p4")
+        return ["-c:v", "h264_nvenc", "-preset", p,
+                "-rc", "vbr", "-cq", str(crf), "-b:v", "0"]
+    if encoder == "h264_qsv":
+        # --crf -> -global_quality (ICQ-style); presets share x264-like names.
+        return ["-c:v", "h264_qsv", "-preset", preset,
+                "-global_quality", str(crf)]
+    if encoder == "h264_videotoolbox":
+        # -q:v is 1..100 where higher is better (opposite of CRF).
+        q = max(1, min(100, 100 - int(crf) * 2))  # crf 17 -> 66
+        return ["-c:v", "h264_videotoolbox", "-q:v", str(q)]
+    sys.exit(f"error: unsupported encoder {encoder}")
+
 
 def build_filter(crop, out_w, out_h, layout, fade_in, fade_out, dur, mute):
     cx, cy, cw, ch = crop
@@ -423,8 +501,8 @@ def render_segment(src, start, dur, crop, out_path, args, out_w, out_h, keep_aud
         cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", args.audio_bitrate]
     else:
         cmd += ["-an"]
-    cmd += ["-c:v", "libx264", "-preset", args.preset, "-crf", str(args.crf),
-            "-pix_fmt", "yuv420p", "-g", "120",
+    cmd += video_encode_args(args.encoder, args.crf, args.preset)
+    cmd += ["-pix_fmt", "yuv420p", "-g", "120",
             "-movflags", "+faststart", out_path, "-y"]
     run(cmd)
 
@@ -561,8 +639,14 @@ def main():
     p.add_argument("--layout", choices=["vertical", "original"], default="vertical",
                    help="'vertical' = 9:16 on a blurred backdrop; 'original' = keep the crop's aspect")
     p.add_argument("--width", type=int, default=1080, help="output width in pixels")
-    p.add_argument("--crf", type=int, default=17, help="x264 quality; lower = better, 17 is near-transparent")
-    p.add_argument("--preset", default="veryfast", help="x264 speed preset")
+    p.add_argument("--encoder", choices=ENCODER_CHOICES, default="auto",
+                   help="H.264 encoder; auto picks nvenc/qsv/videotoolbox if a tiny "
+                        "test encode succeeds, else libx264")
+    p.add_argument("--crf", type=int, default=17,
+                   help="quality: libx264 -crf / nvenc -cq / qsv -global_quality "
+                        "(lower=better); videotoolbox maps to -q:v ≈ 100-2*crf")
+    p.add_argument("--preset", default="veryfast",
+                   help="speed preset (libx264/qsv names; nvenc maps to p1–p7)")
     p.add_argument("--audio-bitrate", default="192k")
     p.add_argument("--mute", action="store_true", help="drop audio (add music later in-app)")
     p.add_argument("--crop", type=str, default=None,
@@ -577,6 +661,11 @@ def main():
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
             sys.exit(f"error: {tool} not found on PATH")
+
+    choice = args.encoder
+    args.encoder = resolve_encoder(choice)
+    log(f"encoder: {args.encoder}" + (f" (from --encoder {choice})" if choice != "auto"
+                                       else " (auto)"))
 
     if args.crop:
         try:
