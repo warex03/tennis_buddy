@@ -34,6 +34,8 @@ to ffmpeg for everything media-related.
 - **Original quality preserved.** 60 fps retained, CRF 17, lanczos downscale,
   square pixels, original court audio (or `--mute` to add music in-app).
 - **Dry-run mode.** Print the cut list in seconds before committing CPU to encoding.
+- **Cut-list sidecar.** After analysis (including `--dry-run`), writes
+  `{source}_cuts.csv` in `-o` with each kept rally — no encoding required.
 
 ---
 
@@ -56,6 +58,21 @@ See the cut list without spending time on encoding:
 ```bash
 python3 tennis_reels.py -i 1.MP4 --dry-run
 ```
+
+### Cut-list CSV
+
+After analysis (including `--dry-run`), each source gets `{basename}_cuts.csv` in
+`-o` / `--outdir`. Columns (seconds, 3 decimal places):
+
+| Column | Meaning |
+| --- | --- |
+| `source` | Absolute path to the input video |
+| `start` | Rally start time |
+| `end` | Rally end time |
+| `duration` | `end - start` |
+
+Import into a spreadsheet or map the ranges into your editor for hand-finishing.
+No encoding is required for this file to be written.
 
 ---
 
@@ -133,7 +150,7 @@ music in-app.
 | `--mute` | off | Drop audio entirely |
 | `--crop` | auto | Override the action region, as `WxH+X+Y` |
 | `--no-framing-check` | off | Keep footage even when the camera framing changes |
-| `--dry-run` | off | Analyse and print the cut list, render nothing |
+| `--dry-run` | off | Analyse, write cut-list CSV, render nothing |
 | `--workdir` | temp dir | Scratch directory; kept if you pass one explicitly |
 
 ---
@@ -196,8 +213,8 @@ Roughly in order of value for effort.
 
 ### Usability
 
-13. **Emit a cut-list sidecar** (EDL, CSV, or Premiere/Resolve-importable XML) so
-    a rough auto-cut can be hand-finished in an editor rather than re-run.
+13. ~~**Emit a cut-list sidecar**~~ Done — `{basename}_cuts.csv` in `-o` after
+    analysis (including `--dry-run`): `source,start,end,duration`.
 14. **Add a contact-sheet QA mode** that tiles a frame every N seconds from each
     finished reel. This is how the cuts were verified by eye during development
     and it catches a bad detection in one glance.

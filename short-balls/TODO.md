@@ -97,8 +97,10 @@ In short-balls/tennis_reels.py, reels currently preserve source order when packi
 
 ---
 
-## 12. Emit cut-list sidecar (EDL/CSV)
+## 12. Emit cut-list sidecar (EDL/CSV) — DONE
 
+Done 2026-08-01: after analysis (including `--dry-run`), writes `{basename}_cuts.csv`
+in `-o` via stdlib `csv` (`source,start,end,duration` seconds). Documented in README.
 ```
 In short-balls/tennis_reels.py, after analysis (including --dry-run), write a cut-list sidecar next to outputs or in outdir: CSV and/or a simple EDL listing source file, start, end, duration for each kept rally. Make it easy to import or hand-finish in an editor. Do not require encoding. Document format in short-balls/README.md. Stdlib only for the writer. Minimal, useful columns only.
 ```
@@ -118,14 +120,6 @@ In short-balls/tennis_reels.py, add a --contact-sheet (or similar) QA mode that,
 Done 2026-08-01: `short-balls/Dockerfile` (debian slim + ffmpeg/python3/numpy via apt); ENTRYPOINT matches README `docker build` / `docker run` example.
 ```
 short-balls/README.md documents `docker build -t tennis-reels .` but there is no Dockerfile. Add a minimal Dockerfile under short-balls/ that installs ffmpeg and numpy, copies tennis_reels.py, and sets a sensible ENTRYPOINT so the README docker run example works (or update the README commands to match). Keep the image lean. Do not add unnecessary packages. Verify the documented build/run commands are accurate.
-```
-
----
-
-## 15. Validate numpy at startup
-
-```
-In short-balls/tennis_reels.py main(), ffmpeg/ffprobe are checked via shutil.which, but a missing numpy only fails at import. Add a clear startup check/error for numpy (or catch ImportError at top with a user-friendly message telling the user how to install it). Keep it consistent with the ffmpeg checks. Minimal change.
 ```
 
 ---

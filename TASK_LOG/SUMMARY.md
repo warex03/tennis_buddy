@@ -1,6 +1,7 @@
 # Task summary
 Updated: 2026-08-01
 
+- Cut-list sidecar: after analysis (including `--dry-run`), writes `{basename}_cuts.csv` in `-o` (`source,start,end,duration`); stdlib only; README + TODO #12 updated.
 - Parallelized rally encoding in `short-balls/tennis_reels.py` with a CPU-sized `multiprocessing.Pool`; deterministic segment naming/order preserved; README updated.
 - Vectorized the `detect_onsets()` rolling median via `sliding_window_view` + `np.median` (every 8 frames); behavior unchanged vs the old list-comp; ~10× faster on synthetic flux; TODO #2 marked done.
 - Combined audio + keyframe extract into one ffmpeg pass (`extract_analysis`); wrappers preserved; no-audio still samples keyframes; README pipeline/item 12 and TODO #4 updated.

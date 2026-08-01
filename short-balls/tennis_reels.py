@@ -26,6 +26,7 @@ assembled with a stream copy, so the footage is encoded exactly once.
 """
 
 import argparse
+import csv
 import json
 import math
 import multiprocessing
@@ -362,6 +363,15 @@ def segments_for_target(onsets, duration, invalid, target, **kw):
     return best
 
 
+def write_cutlist(path, src, segs):
+    """CSV sidecar of kept rallies: source, start, end, duration (seconds)."""
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["source", "start", "end", "duration"])
+        for s, e in segs:
+            w.writerow([src, f"{s:.3f}", f"{e:.3f}", f"{e - s:.3f}"])
+
+
 # --------------------------------------------------------------------------------------
 # 4. rendering
 # --------------------------------------------------------------------------------------
@@ -492,6 +502,10 @@ def process(src, args, workdir, index):
     log(f"  {len(segs)} rallies, {total:.0f}s kept ({frac * 100:.0f}% of usable footage), "
         f"density threshold {thresh:.2f}")
 
+    cutlist = os.path.join(args.outdir, f"{name}_cuts.csv")
+    write_cutlist(cutlist, os.path.abspath(src), segs)
+    log(f"  cut list: {cutlist}")
+
     if args.dry_run:
         for s, e in segs:
             log(f"    {s:7.1f} - {e:7.1f}  ({e - s:.1f}s)")
@@ -549,7 +563,8 @@ def main():
                    help="override auto-detected action region, as WxH+X+Y")
     p.add_argument("--no-framing-check", action="store_true",
                    help="keep footage even if the camera framing changes")
-    p.add_argument("--dry-run", action="store_true", help="analyse and print the cut list, render nothing")
+    p.add_argument("--dry-run", action="store_true",
+                   help="analyse, write cut-list CSV, render nothing")
     p.add_argument("--workdir", default=None, help="scratch dir (default: a temp dir, removed on exit)")
     args = p.parse_args()
 
