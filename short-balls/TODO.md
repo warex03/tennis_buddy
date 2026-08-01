@@ -41,8 +41,9 @@ In short-balls/tennis_reels.py, extract_audio() and sample_keyframes() each deco
 
 ---
 
-## 5. Reduce keyframe memory (avoid float32 blowup)
+## 5. Reduce keyframe memory (avoid float32 blowup) — DONE
 
+Done 2026-08-01: keyframes stay uint8; `find_invalid_ranges` / `find_action_region` promote only temporary slices/diffs; threshold 28 unchanged.
 ```
 In short-balls/tennis_reels.py, sample_keyframes() loads all keyframes and immediately casts to float32, which can use ~4x memory on long clips. Keep frames as uint8 (or a compact dtype) for as long as possible. Update find_invalid_ranges() and find_action_region() to work correctly on uint8 (or convert only temporary slices/diffs as needed). Background median and differencing must remain correct; do not silently change thresholds without noting it. Goal: substantially lower peak RAM on hour-long inputs without hurting framing/action detection quality. No new dependencies. Minimal, focused change.
 ```

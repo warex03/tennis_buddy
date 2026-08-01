@@ -144,7 +144,9 @@ def extract_audio(src, wav_path, sr=22050):
 def load_keyframes(raw_path, w=480, h=270):
     data = np.fromfile(raw_path, dtype=np.uint8)
     n = data.size // (w * h)
-    return data[:n * w * h].reshape(n, h, w).astype(np.float32)
+    # Keep uint8: float32 here used ~4x RAM on long clips. Callers promote
+    # only temporary slices/diffs when they need signed arithmetic.
+    return data[:n * w * h].reshape(n, h, w)
 
 
 def detect_onsets(wav_path, lo=1200, hi=9000, z_thresh=6.0, refractory=0.18):
@@ -219,9 +221,12 @@ def find_invalid_ranges(frames, duration, frac_thresh=0.15, pad=1.5):
     """
     if len(frames) < 5:
         return []
-    bg = np.median(frames, axis=0)
+    bg = np.median(frames, axis=0).astype(np.float32)
     h = frames.shape[1]
-    diff = np.abs(frames[:, int(h * 0.22):, :] - bg[int(h * 0.22):, :])
+    y0 = int(h * 0.22)
+    # uint8 subtraction wraps; promote the cropped region only (threshold 28
+    # is still in pixel units — same as when frames were stored as float32).
+    diff = np.abs(frames[:, y0:, :].astype(np.float32) - bg[y0:])
     frac = (diff > 28).mean(axis=(1, 2))
 
     spf = duration / len(frames)                    # seconds per keyframe
@@ -244,7 +249,8 @@ def find_action_region(frames, src_w, src_h, valid_mask=None, pad_frac=0.06):
     f = frames if valid_mask is None else frames[valid_mask]
     if len(f) < 3:
         return 0, 0, src_w, src_h
-    d = np.abs(np.diff(f, axis=0))
+    # int16: uint8 np.diff wraps; values stay in 0..255 so diffs match float32.
+    d = np.abs(np.diff(f.astype(np.int16), axis=0))
     kh, kw = f.shape[1], f.shape[2]
 
     def bounds(profile, length, smooth):
