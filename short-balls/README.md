@@ -48,6 +48,51 @@ to ffmpeg for everything media-related.
 
 `ffmpeg`, `ffprobe`, `python3`, `numpy`. Nothing else — no pip install step.
 
+### Hardware encoding (NVIDIA + Docker on WSL2)
+
+With `--encoder auto` (default), the container tries `h264_nvenc` first. That
+only works if Docker can see the GPU. On WSL2 with Docker Engine inside Linux:
+
+1. **Windows NVIDIA driver** on the host (Game Ready or Studio). Do **not**
+   install Linux NVIDIA drivers inside WSL — the Windows driver is mapped in.
+   Confirm in WSL: `nvidia-smi` lists your GPU.
+2. **NVIDIA Container Toolkit** in the WSL distro (Ubuntu example):
+
+```bash
+sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+  ca-certificates curl gnupg2
+
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo service docker restart
+```
+
+If Docker won't restart cleanly, from PowerShell/CMD run `wsl --shutdown`,
+reopen WSL, then `sudo service docker start`.
+
+3. **Verify** GPU passthrough:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
+```
+
+4. **This project** already requests a GPU via `gpus: all` in the repo-root
+   `docker-compose.yml`. After the toolkit is installed, `make run` should log
+   `encoder: h264_nvenc`. Force it with `make run ARGS='--encoder h264_nvenc'`.
+
+**WSL tip:** if `--gpus all` still fails, set `no-cgroups = true` in
+`/etc/nvidia-container-runtime/config.toml` and restart Docker.
+
+Official guide: [Installing the NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+
 ## Usage
 
 ### From the repo root (Makefile)
@@ -68,15 +113,17 @@ make run ARGS='--keep 0.4 --mute'
 make help           # list targets
 ```
 
-### From this directory (Docker Compose)
+### From the repo root (Docker Compose)
 
-Put source videos in `./inputs`, then:
+Put source videos in `short-balls/inputs`, then from the repo root:
 
 ```bash
 docker compose run --rm tennis-reels -i inputs
 ```
 
-`-i` accepts files and/or folders; a folder expands to all videos inside (`.mp4`, `.mov`, `.mkv`, `.avi`, `.m4v`, `.webm`). Host mounts: `./inputs` → `/work/inputs`, `./reels` → `/work/reels` (default `-o`). For each source video, outputs land in `-o/tennis_reels_<filename>/` (intermediates, cut list, and finished reels) — nothing is written under `/tmp`.
+`-i` accepts files and/or folders; a folder expands to all videos inside (`.mp4`, `.mov`, `.mkv`, `.avi`, `.m4v`, `.webm`). Host mounts: `short-balls/inputs` → `/work/inputs`, `short-balls/reels` → `/work/reels` (default `-o`). For each source video, outputs land in `-o/tennis_reels_<filename>/` (intermediates, cut list, and finished reels) — nothing is written under `/tmp`.
+
+On startup the entrypoint `chown`s those bind mounts to your host UID/GID (from `UID`/`GID`, defaulting to `1000`), then drops privileges before encoding. So if Docker recreated `inputs`/`reels` as root after you deleted them, the next `make run` / `docker compose run` makes them writable again. Prefer `make` (exports `UID`/`GID`); for raw Compose, export them yourself if your user is not `1000`.
 
 See the cut list without spending time on encoding:
 

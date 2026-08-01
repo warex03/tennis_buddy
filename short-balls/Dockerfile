@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg python3 python3-numpy \
+    && apt-get install -y --no-install-recommends ffmpeg gosu python3 python3-numpy \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work

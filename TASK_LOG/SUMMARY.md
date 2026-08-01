@@ -1,6 +1,7 @@
 # Task summary
 Updated: 2026-08-01
 
+- Documented NVIDIA Container Toolkit setup for WSL2 + Docker in `short-balls/README.md`; added `gpus: all` to `docker-compose.yml` so `make run` can use `h264_nvenc`.
 - Hardware H.264 encoding: startup probe (encoder help + 1-frame test) for `h264_nvenc` / `h264_qsv` / `h264_videotoolbox`, fall back to `libx264`; `--encoder` to force; `--crf`/`--preset` mapped per encoder; yuv420p + faststart kept; README + TODO #6 done.
 - Keyframes stay uint8 (no float32 blowup); invalid-range / action-region code promotes only temporary slices/diffs; threshold 28 unchanged; TODO #5 done.
 - Cut-list sidecar: after analysis (including `--dry-run`), writes `{basename}_cuts.csv` in `-o` (`source,start,end,duration`); stdlib only; README + TODO #12 updated.

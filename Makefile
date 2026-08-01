@@ -9,9 +9,12 @@
 #   make run INPUT=inputs/1.MP4
 #   make shell        # interactive shell in the container
 
-SHORT_BALLS := short-balls
-COMPOSE     := docker compose --project-directory $(SHORT_BALLS) -f $(SHORT_BALLS)/docker-compose.yml
-SERVICE     := tennis-reels
+COMPOSE := docker compose
+SERVICE := tennis-reels
+
+# Host identity for container entrypoint chown (bind mounts stay writable)
+export UID := $(shell id -u)
+export GID := $(shell id -g)
 
 # Default input path inside the container (host: short-balls/inputs)
 INPUT ?= inputs

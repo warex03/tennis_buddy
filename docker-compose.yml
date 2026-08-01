@@ -1,15 +1,19 @@
 services:
   tennis-reels:
-    build: .
+    build: ./short-balls
     image: tennis-reels
+    gpus: all
+    environment:
+      HOST_UID: ${UID:-1000}
+      HOST_GID: ${GID:-1000}
     volumes:
       - type: bind
-        source: ./inputs
+        source: ./short-balls/inputs
         target: /work/inputs
         bind:
           create_host_path: true
       - type: bind
-        source: ./reels
+        source: ./short-balls/reels
         target: /work/reels
         bind:
           create_host_path: true
