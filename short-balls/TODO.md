@@ -111,8 +111,9 @@ In short-balls/tennis_reels.py, add a --contact-sheet (or similar) QA mode that,
 
 ---
 
-## 14. Add Dockerfile (docs currently lie)
+## 14. Add Dockerfile — DONE
 
+Done 2026-08-01: `short-balls/Dockerfile` (debian slim + ffmpeg/python3/numpy via apt); ENTRYPOINT matches README `docker build` / `docker run` example.
 ```
 short-balls/README.md documents `docker build -t tennis-reels .` but there is no Dockerfile. Add a minimal Dockerfile under short-balls/ that installs ffmpeg and numpy, copies tennis_reels.py, and sets a sensible ENTRYPOINT so the README docker run example works (or update the README commands to match). Keep the image lean. Do not add unnecessary packages. Verify the documented build/run commands are accurate.
 ```

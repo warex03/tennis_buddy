@@ -1,0 +1,7 @@
+services:
+  tennis-reels:
+    build: .
+    image: tennis-reels
+    volumes:
+      - ./inputs:/work/inputs
+      - ./reels:/work/reels

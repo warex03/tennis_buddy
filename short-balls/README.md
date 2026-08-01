@@ -43,10 +43,13 @@ to ffmpeg for everything media-related.
 
 ## Usage
 
+Put source videos in `./inputs`, then:
+
 ```bash
-docker build -t tennis-reels .
-docker run --rm --cpus 8 -v "$PWD:/work" tennis-reels -i 1.MP4 2.MP4 -o reels
+docker compose run --rm --cpus 8 tennis-reels -i inputs/1.MP4 inputs/2.MP4
 ```
+
+Host mounts: `./inputs` → `/work/inputs`, `./reels` → `/work/reels` (default `-o`).
 
 Or directly, on any machine with ffmpeg and numpy:
 
