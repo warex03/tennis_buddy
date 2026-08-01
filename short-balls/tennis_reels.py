@@ -105,10 +105,45 @@ def has_audio(path):
 # 1. audio -> ball-strike onsets
 # --------------------------------------------------------------------------------------
 
+def extract_analysis(src, wav_path=None, raw_path=None, sr=22050, w=480, h=270):
+    """One ffmpeg pass: optional mono WAV and/or raw grayscale keyframes.
+
+    When both are requested but the source has no audio, keyframes are still
+    written (WAV is skipped) so framing analysis is not blocked.
+    """
+    do_wav = wav_path is not None
+    do_raw = raw_path is not None
+    if not do_wav and not do_raw:
+        raise ValueError("extract_analysis needs wav_path and/or raw_path")
+    if do_wav and do_raw and not has_audio(src):
+        do_wav = False
+
+    what = " + ".join(x for x, on in (("audio", do_wav), ("keyframes", do_raw)) if on)
+    log(f"extracting {what} (one pass)")
+
+    cmd = ["ffmpeg", "-nostdin", "-v", "error"]
+    if do_raw:
+        cmd += ["-skip_frame", "nokey"]
+    cmd += ["-i", src]
+    if do_wav:
+        cmd += ["-vn", "-ac", "1", "-ar", str(sr), "-f", "wav", wav_path]
+    if do_raw:
+        if do_wav:
+            cmd.append("-an")
+        cmd += ["-vsync", "0", "-vf", f"scale={w}:{h},format=gray",
+                "-f", "rawvideo", raw_path]
+    cmd.append("-y")
+    run(cmd)
+
+
 def extract_audio(src, wav_path, sr=22050):
-    log(f"extracting audio -> {os.path.basename(wav_path)}")
-    run(["ffmpeg", "-nostdin", "-v", "error", "-i", src,
-         "-vn", "-ac", "1", "-ar", str(sr), "-f", "wav", wav_path, "-y"])
+    extract_analysis(src, wav_path=wav_path, sr=sr)
+
+
+def load_keyframes(raw_path, w=480, h=270):
+    data = np.fromfile(raw_path, dtype=np.uint8)
+    n = data.size // (w * h)
+    return data[:n * w * h].reshape(n, h, w).astype(np.float32)
 
 
 def detect_onsets(wav_path, lo=1200, hi=9000, z_thresh=6.0, refractory=0.18):
@@ -171,13 +206,8 @@ def detect_onsets(wav_path, lo=1200, hi=9000, z_thresh=6.0, refractory=0.18):
 
 def sample_keyframes(src, raw_path, w=480, h=270):
     """Decode key frames only (~1 fps) as raw grayscale. Cheap: no full decode."""
-    log("sampling keyframes for framing / action analysis")
-    run(["ffmpeg", "-nostdin", "-v", "error", "-skip_frame", "nokey", "-i", src,
-         "-vsync", "0", "-vf", f"scale={w}:{h},format=gray",
-         "-f", "rawvideo", raw_path, "-y"])
-    data = np.fromfile(raw_path, dtype=np.uint8)
-    n = data.size // (w * h)
-    return data[:n * w * h].reshape(n, h, w).astype(np.float32)
+    extract_analysis(src, raw_path=raw_path, w=w, h=h)
+    return load_keyframes(raw_path, w, h)
 
 
 def find_invalid_ranges(frames, duration, frac_thresh=0.15, pad=1.5):
@@ -433,12 +463,12 @@ def process(src, args, workdir, index):
         return []
 
     wav = os.path.join(workdir, f"{name}.wav")
-    extract_audio(src, wav)
+    raw = os.path.join(workdir, f"{name}.raw")
+    extract_analysis(src, wav_path=wav, raw_path=raw)
     onsets, adur = detect_onsets(wav)
     log(f"  {len(onsets)} ball-strike onsets ({len(onsets) / max(adur, 1) * 60:.0f}/min)")
 
-    raw = os.path.join(workdir, f"{name}.raw")
-    frames = sample_keyframes(src, raw)
+    frames = load_keyframes(raw)
 
     invalid = [] if args.no_framing_check else find_invalid_ranges(frames, info["duration"])
     if invalid:

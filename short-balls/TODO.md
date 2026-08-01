@@ -32,8 +32,9 @@ In short-balls/tennis_reels.py, cache deterministic analysis results per input v
 
 ---
 
-## 4. Single ffmpeg pass for audio + keyframes
+## 4. Single ffmpeg pass for audio + keyframes — DONE
 
+Done 2026-08-01: `extract_analysis()` one ffmpeg pass → WAV + raw keyframes; thin `extract_audio` / `sample_keyframes` wrappers; no-audio still samples keyframes; README pipeline + item 12 updated.
 ```
 In short-balls/tennis_reels.py, extract_audio() and sample_keyframes() each decode/read the source separately. Combine them into one ffmpeg invocation with two outputs (WAV + raw grayscale keyframes) so analysis does one pass over the file. Preserve current formats/params: mono 22.05 kHz WAV; keyframes via -skip_frame nokey, scale 480x270, gray rawvideo. Keep separate helper APIs if that stays clear, but share one underlying extract. Handle the no-audio case without breaking keyframe sampling. Update README pipeline notes if they claim two separate reads. Minimal change; no new dependencies.
 ```

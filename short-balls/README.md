@@ -63,35 +63,38 @@ python3 tennis_reels.py -i 1.MP4 --dry-run
 
 **1. Probe.** `ffprobe` for dimensions, fps, codec, duration.
 
-**2. Find ball strikes in the audio.** Extract mono 22 kHz WAV, then run
-spectral-flux onset detection: STFT (1024-sample window, 256 hop), keep the
-1.2–9 kHz band, and sum only the *positive* frame-to-frame change in magnitude.
-A racket hitting a ball is a broadband click — energy jumps across the whole band
-in one frame. Steady sounds like wind and conversation don't produce that jump.
-Peaks are picked against a rolling local median scaled by MAD, so the threshold
-adapts to ambient level instead of being an absolute loudness cutoff.
+**2. Extract audio + keyframes in one pass.** A single ffmpeg read writes mono
+22.05 kHz WAV and keyframe-only (`-skip_frame nokey`, ~1 fps) 480x270 grayscale
+rawvideo. No-audio sources still get keyframes (WAV is skipped).
 
-**3. Turn strikes into rallies.** Count onsets in a ±2s window on a 0.25s grid.
+**3. Find ball strikes in the audio.** Spectral-flux onset detection on the WAV:
+STFT (1024-sample window, 256 hop), keep the 1.2–9 kHz band, and sum only the
+*positive* frame-to-frame change in magnitude. A racket hitting a ball is a
+broadband click — energy jumps across the whole band in one frame. Steady sounds
+like wind and conversation don't produce that jump. Peaks are picked against a
+rolling local median scaled by MAD, so the threshold adapts to ambient level
+instead of being an absolute loudness cutoff.
+
+**4. Turn strikes into rallies.** Count onsets in a ±2s window on a 0.25s grid.
 Where that density stays above a threshold, it's a rally. Merge spans separated
 by under 1.6s, drop anything shorter than 4s, pad 1.0s before and 1.2s after so
 you see the wind-up and the finish. Pauses longer than about 2s fall out on their
 own — this is what removes ball retrieval and walking. The threshold isn't
 hardcoded; the script sweeps it and picks the value hitting your `--keep` target.
 
-**4. Reject bad framing.** Decode *keyframes only* (`-skip_frame nokey`, roughly
-1 fps) at 480x270 grayscale — cheap, no full decode. Take the per-pixel median as
-the background, then flag keyframes where more than 15% of pixels differ from it.
-That's what caught the first 52 seconds of 1.MP4, where the camera was still
-being positioned on an empty court. Audio alone had happily marked it as play,
-since there was ball noise nearby.
+**5. Reject bad framing.** From the keyframes already extracted: take the
+per-pixel median as the background, then flag frames where more than 15% of
+pixels differ from it. That's what caught the first 52 seconds of 1.MP4, where
+the camera was still being positioned on an empty court. Audio alone had happily
+marked it as play, since there was ball noise nearby.
 
-**5. Locate the action.** From those same keyframes, difference consecutive
+**6. Locate the action.** From those same keyframes, difference consecutive
 frames and build column and row motion profiles. The columns show two clear peaks
 — your near players — and the bounding box across them defines the crop.
 Auto-detection lands on 1266x862+276+110 for your footage; I'd hand-tuned
 1320x900+240+110.
 
-**6. Re-frame to 9:16.** The action is far too wide for a straight vertical crop;
+**7. Re-frame to 9:16.** The action is far too wide for a straight vertical crop;
 anything narrow enough for 9:16 clips a near player. So the crop is scaled to
 1080 wide and laid over a blurred, darkened copy of itself. `setsar=1` appears on
 every branch — this is the bug that made your first render look stretched. The
@@ -99,7 +102,7 @@ scale filter compensates for aspect changes by adjusting the sample aspect ratio
 and the heavily downscaled background branch carried SAR 352:135 into the overlay
 output.
 
-**7. Encode once, assemble with copies.** Each rally is encoded separately (x264
+**8. Encode once, assemble with copies.** Each rally is encoded separately (x264
 CRF 17, lanczos downscale, 60fps preserved, 80ms audio fades to avoid clicks at
 the joins), in parallel across a process pool sized to CPU count. Segment names
 and order stay fixed so packing is unchanged. Reels are then bin-packed by both
@@ -188,9 +191,8 @@ Roughly in order of value for effort.
 11. **Cache the analysis.** Onsets, invalid ranges and the crop box are
     deterministic per input. Write them to a JSON sidecar so re-running with a
     different `--keep` skips straight to encoding.
-12. **Reuse one decode pass.** Audio extraction and keyframe sampling each read
-    the whole file. On a large file that's the dominant analysis cost, and both
-    outputs could come from a single ffmpeg invocation with two output streams.
+12. ~~**Reuse one decode pass.**~~ Done — `extract_analysis()` writes mono WAV and
+    grayscale keyframe rawvideo from one ffmpeg invocation with two outputs.
 
 ### Usability
 
