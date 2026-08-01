@@ -84,9 +84,11 @@ reopen WSL, then `sudo service docker start`.
 docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
 ```
 
-4. **This project** already requests a GPU via `gpus: all` in the repo-root
-   `docker-compose.yml`. After the toolkit is installed, `make run` should log
-   `encoder: h264_nvenc`. Force it with `make run ARGS='--encoder h264_nvenc'`.
+4. **This project** already requests a GPU via `gpus: all` and sets
+   `NVIDIA_DRIVER_CAPABILITIES=all` in the repo-root `docker-compose.yml`
+   (the latter mounts `libnvidia-encode` for NVENC). After the toolkit is
+   installed, `make run` should log `encoder: h264_nvenc`. Force it with
+   `make run ARGS='--encoder h264_nvenc'`.
 
 **WSL tip:** if `--gpus all` still fails, set `no-cgroups = true` in
 `/etc/nvidia-container-runtime/config.toml` and restart Docker.
@@ -109,6 +111,7 @@ Extra flags via `ARGS`; a specific file/folder via `INPUT` (path inside the cont
 
 ```bash
 make dry-run INPUT=inputs/1.MP4
+make run INPUT=inputs/2026-08-01   # nested folder (see below)
 make run ARGS='--keep 0.4 --mute'
 make help           # list targets
 ```
@@ -121,7 +124,14 @@ Put source videos in `short-balls/inputs`, then from the repo root:
 docker compose run --rm tennis-reels -i inputs
 ```
 
-`-i` accepts files and/or folders; a folder expands to all videos inside (`.mp4`, `.mov`, `.mkv`, `.avi`, `.m4v`, `.webm`). Host mounts: `short-balls/inputs` → `/work/inputs`, `short-balls/reels` → `/work/reels` (default `-o`). For each source video, outputs land in `-o/tennis_reels_<filename>/` (intermediates, cut list, and finished reels) — nothing is written under `/tmp`.
+`-i` accepts files and/or folders; a folder expands to all videos **directly** inside it (`.mp4`, `.mov`, `.mkv`, `.avi`, `.m4v`, `.webm`) — **not recursive**. If your clips live in a subfolder (e.g. `short-balls/inputs/2026-08-01/*.MP4`), pass that path instead:
+
+```bash
+docker compose run --rm tennis-reels -i inputs/2026-08-01
+# or: make run INPUT=inputs/2026-08-01
+```
+
+Otherwise `-i inputs` sees only the subfolder name and exits with `error: no video files in inputs`. Host mounts: `short-balls/inputs` → `/work/inputs`, `short-balls/reels` → `/work/reels` (default `-o`). For each source video, outputs land in `-o/tennis_reels_<filename>/` (intermediates, cut list, and finished reels) — nothing is written under `/tmp`.
 
 On startup the entrypoint `chown`s those bind mounts to your host UID/GID (from `UID`/`GID`, defaulting to `1000`), then drops privileges before encoding. So if Docker recreated `inputs`/`reels` as root after you deleted them, the next `make run` / `docker compose run` makes them writable again. Prefer `make` (exports `UID`/`GID`); for raw Compose, export them yourself if your user is not `1000`.
 
